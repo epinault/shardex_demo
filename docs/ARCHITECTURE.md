@@ -125,6 +125,41 @@ shard by `mix shardex_demo.migrate_shards`, which enumerates `Shards.shards()`
 and runs `Ecto.Migrator` against each pool's `dynamic_name` (its own
 `schema_migrations` table per shard).
 
+## Maintenance mode
+
+shardex can take a shard out of rotation at runtime:
+
+- `Shards.maintenance(shard, :drain)` — stop routing to it, keep the pool open.
+- `Shards.maintenance(shard, :stop)` — stop routing and stop the pool.
+- `Shards.activate(shard)` — start pools (if stopped), then route again.
+- `Shards.status(shard)` — `:active | :drain | :stopped`.
+
+While a shard is in maintenance, `Shards.ref/1` returns `{:error, :maintenance}`
+for its tenants — shardex does **not** remap those keys to another shard. The
+subdomain plug has the only HTTP-facing branch for this and replies `503`:
+
+```elixir
+# lib/shardex_demo_web/plugs/tenant_from_subdomain.ex
+{:error, :maintenance} ->
+  halt_with(conn, 503, "This tenant's shard is under maintenance. Try again shortly.")
+```
+
+So tenants on a drained shard get `503`; tenants on other shards are unaffected.
+
+Maintenance state lives **in memory on the running node** — it is not persisted,
+and on restart the boot config wins (all shards come back `:active`). That is
+why `mix shardex_demo.maintenance` connects to the running server over Erlang
+RPC rather than starting its own app: a change made in a throwaway node would
+vanish with it. Start the server named so the task can reach it:
+
+```bash
+elixir --name shardex_demo@127.0.0.1 --cookie shardex_demo -S mix phx.server
+mix shardex_demo.maintenance shard_1 drain
+```
+
+`test/shardex_demo_web/maintenance_test.exs` asserts the `503`/recovery cycle
+in-process (tests share the node, so they call `Shards.maintenance/3` directly).
+
 ## Testing
 
 - **Catalog** uses the Ecto SQL sandbox (fast, isolated; `async: true` where

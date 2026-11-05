@@ -56,6 +56,7 @@ Each `shardex` concept maps to one place in this app. The first three are
 | **Assignment** (your own policy) | pick a shard for a *new* tenant | `ShardexDemo.ShardAssignment` — [`lib/shardex_demo/shard_assignment.ex`](lib/shardex_demo/shard_assignment.ex) |
 | **The directory** the strategy reads | source of truth for slug → shard | `organizations` table + `ShardexDemo.Catalog` — [`lib/shardex_demo/catalog.ex`](lib/shardex_demo/catalog.ex) |
 | **Cache invalidation** (`invalidate/1`) | drop a stale route after reassignment | `Catalog.reassign_shard/2` in [`lib/shardex_demo/catalog.ex`](lib/shardex_demo/catalog.ex) |
+| **Maintenance** (`maintenance/3`, `activate/1`, `status/1`) | take a shard out of rotation → `ref/1` returns `{:error, :maintenance}` → plug replies `503` | `mix shardex_demo.maintenance` — [`lib/mix/tasks/shardex_demo.maintenance.ex`](lib/mix/tasks/shardex_demo.maintenance.ex); the `503` branch is in the [plug](lib/shardex_demo_web/plugs/tenant_from_subdomain.ex) |
 | **Migrations** (shardex runs none) | migrate every shard DB | `mix shardex_demo.migrate_shards` — [`lib/mix/tasks/shardex_demo.migrate_shards.ex`](lib/mix/tasks/shardex_demo.migrate_shards.ex) |
 
 The two tenant identifiers used as `shardex` **keys** are organization slugs
@@ -117,11 +118,44 @@ SHARDEX_DEMO_PGPORT=5433 mix phx.server
 | `mix shardex_demo.setup_shards` | create the shard databases (not in `:ecto_repos`) |
 | `mix shardex_demo.migrate_shards` | migrate every shard (`priv/shard_repo/migrations`) |
 | `mix shardex_demo.seed` | insert demo tenants + contacts (idempotent) |
+| `mix shardex_demo.maintenance <shard> <drain\|stop\|activate\|status>` | take a shard in/out of rotation on the running server |
 | `mix ecto.reset` | drop + recreate + migrate + seed everything |
 | `mix test` | full suite (sets up catalog + shard test DBs first) |
 | `mix precommit` | compile (warnings as errors), format, test |
 
 To wipe everything (including the shard databases): `docker compose down -v`.
+
+## Maintenance mode
+
+shardex can take a shard out of rotation at runtime. While a shard is in
+maintenance, `Shards.ref/1` returns `{:error, :maintenance}` for its tenants,
+and the subdomain plug turns that into a **`503`** — so tenants on *other*
+shards are unaffected.
+
+Maintenance state is in-memory on the running node, so the `maintenance` task
+talks to the server over Erlang RPC. Start the server with a node name + cookie:
+
+```bash
+SHARDEX_DEMO_PGPORT=5432 \
+  elixir --name shardex_demo@127.0.0.1 --cookie shardex_demo -S mix phx.server
+```
+
+Then, in another shell, drive it and watch the HTTP codes:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: acme.lvh.me' localhost:4000/contacts   # 200
+
+mix shardex_demo.maintenance shard_1 drain      # stop routing, keep the pool
+curl ... -H 'Host: acme.lvh.me'  localhost:4000/contacts   # 503  (acme is on shard_1)
+curl ... -H 'Host: globex.lvh.me' localhost:4000/contacts  # 200  (globex is on shard_2)
+
+mix shardex_demo.maintenance shard_1 status     # {:ok, %{status: :drain, ...}}
+mix shardex_demo.maintenance shard_1 activate    # back into rotation → 200
+```
+
+`drain` keeps the pool (connections stay open); `stop` also stops the pool.
+Runtime maintenance is not persisted — on restart the boot config wins.
+Override the node/cookie with `SHARDEX_DEMO_NODE` / `SHARDEX_DEMO_COOKIE`.
 
 ## Tests
 
@@ -129,6 +163,7 @@ To wipe everything (including the shard databases): `docker compose down -v`.
 - `test/shardex_demo/org_directory_test.exs` — the custom strategy against the catalog.
 - `test/shardex_demo/tenants_routing_test.exs` — writes land in the correct shard DB.
 - `test/shardex_demo_web/live/**` — subdomain resolution, `on_mount` rebinding, isolation.
+- `test/shardex_demo_web/maintenance_test.exs` — plug returns `503` while a shard is drained.
 
 ## License
 

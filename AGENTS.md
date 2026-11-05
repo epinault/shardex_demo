@@ -29,6 +29,7 @@ mix phx.server                       # http://lvh.me:4000  (admin) / http://acme
 mix shardex_demo.setup_shards        # create shard DBs (not in :ecto_repos)
 mix shardex_demo.migrate_shards      # migrate every shard (priv/shard_repo/migrations)
 mix shardex_demo.seed                # demo tenants + contacts (idempotent)
+mix shardex_demo.maintenance shard_1 drain|stop|activate|status   # RPC to the running server
 mix ecto.reset                       # drop + create + migrate + seed everything
 
 mix test                             # full suite (creates/migrates test DBs first)
@@ -49,6 +50,9 @@ If 5432 is taken, prefix every command with `SHARDEX_DEMO_PGPORT=<port>` (honore
   from the catalog. Wrapped in `Shardex.Strategy.Cached`.
 - `ShardexDemo.ShardAssignment` — custom new-tenant placement (least-loaded).
 - `ShardexDemo.Tenants` — per-tenant data via `Shards.run/2`; `contacts.org_slug` scopes rows within a shard.
+- Maintenance: `Shards.maintenance/3` / `activate/1` / `status/1`, driven by `mix shardex_demo.maintenance` (RPC to
+  the running node, since the state is in-memory). A shard in maintenance makes `ref/1` return
+  `{:error, :maintenance}`, which the plug turns into `503`. State is not persisted across restarts.
 
 ## Conventions
 
