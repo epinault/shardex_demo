@@ -159,11 +159,31 @@ Override the node/cookie with `SHARDEX_DEMO_NODE` / `SHARDEX_DEMO_COOKIE`.
 
 ## Tests
 
-- `test/shardex_demo/tenancy_test.exs` — subdomain → slug parsing (pure).
+Needs Postgres up (`docker compose up -d`) — the `test` alias creates and
+migrates the catalog + shard **test** databases before running:
+
+```bash
+mix test                                              # whole suite
+mix test test/shardex_demo_web/maintenance_test.exs   # one file
+mix test test/shardex_demo/tenants_routing_test.exs:30 # one test by line
+mix precommit                                         # compile (warnings as errors) + format + test
+```
+
+If Postgres isn't on 5432, prefix with the port: `SHARDEX_DEMO_PGPORT=5433 mix test`.
+
+What's covered:
+
+- `test/shardex_demo/tenancy_test.exs` — subdomain → slug parsing (pure, no DB).
 - `test/shardex_demo/org_directory_test.exs` — the custom strategy against the catalog.
 - `test/shardex_demo/tenants_routing_test.exs` — writes land in the correct shard DB.
 - `test/shardex_demo_web/live/**` — subdomain resolution, `on_mount` rebinding, isolation.
-- `test/shardex_demo_web/maintenance_test.exs` — plug returns `503` while a shard is drained.
+- `test/shardex_demo_web/maintenance_test.exs` — plug returns `503` while a shard is drained, `200` after activate.
+
+Notes: the catalog uses the Ecto SQL sandbox; the shard databases are not
+sandboxed (their pools run under shardex's dynamic names), so shard-touching
+tests truncate between runs and are `async: false`. Routing in tests uses a
+static `acme → shard_1`, `globex → shard_2` map. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#testing) for why.
 
 ## License
 
