@@ -11,7 +11,7 @@ beats cleverness. Full walkthrough in `docs/ARCHITECTURE.md`; user-facing quicks
 
 | Item | Value |
 |---|---|
-| Elixir / OTP (pinned) | 1.20.4-otp-29 / 29.0.5 (`.tool-versions`, `mise.toml`); `mix.exs` requires `~> 1.17` |
+| Elixir / OTP (pinned) | 1.20.5-otp-29 / 29.1.2 (`.tool-versions`, `mise.toml`); `mix.exs` requires `~> 1.17` |
 | Phoenix / LiveView | 1.8 / 1.2; Bandit; daisyUI + Tailwind v4 |
 | Library under demo | `{:shardex, "~> 0.1"}` (hex) |
 | Databases | Postgres: 1 catalog (unsharded) + 2 shards, via `docker-compose.yml` + `docker/initdb` |
